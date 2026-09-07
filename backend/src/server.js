@@ -78,7 +78,7 @@ io.on('connection', (socket) => {
     console.log('⚡ New client connected:', socket.id);
 
     // Register user
-    socket.on('register', (userId) => {
+    socket.on('send_message', (data) => {
         activeUsers.set(userId, socket.id);
         console.log(`👤 User ${userId} registered`);
         
