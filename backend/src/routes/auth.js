@@ -13,23 +13,24 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'Password must be at least 6 characters' });
         }
         const hashedPassword = await auth.hashPassword(password);
-        try {
-            const info = db.run(
-                'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-                [username, email, hashedPassword]
-            );
-            const token = auth.generateToken(info.lastInsertRowid, username);
-            res.status(201).json({
-                message: 'Registration successful',
-                token,
-                user: { id: info.lastInsertRowid, username, email }
-            });
-        } catch (err) {
-            if (err.message.includes('UNIQUE constraint failed')) {
-                return res.status(400).json({ error: 'Username or email already exists' });
+        db.run(
+            'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
+            [username, email, hashedPassword],
+            function(err) {
+                if (err) {
+                    if (err.message.includes('UNIQUE constraint failed')) {
+                        return res.status(400).json({ error: 'Username or email already exists' });
+                    }
+                    return res.status(500).json({ error: 'Registration failed' });
+                }
+                const token = auth.generateToken(this.lastID, username);
+                res.status(201).json({
+                    message: 'Registration successful',
+                    token,
+                    user: { id: this.lastID, username, email }
+                });
             }
-            return res.status(500).json({ error: 'Registration failed' });
-        }
+        );
     } catch (error) {
         console.error('Registration error:', error);
         res.status(500).json({ error: 'Server error' });
@@ -42,7 +43,7 @@ router.post('/login', async (req, res) => {
         if (!credential || !password) {
             return res.status(400).json({ error: 'Username/email and password required' });
         }
-        const user = auth.getUserByCredential(credential);
+        const user = await auth.getUserByCredential(credential);
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -50,7 +51,10 @@ router.post('/login', async (req, res) => {
         if (!isValid) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-        db.run('UPDATE users SET last_seen = CURRENT_TIMESTAMP, status = ? WHERE id = ?', ['online', user.id]);
+        db.run(
+            'UPDATE users SET last_seen = CURRENT_TIMESTAMP, status = ? WHERE id = ?',
+            ['online', user.id]
+        );
         const token = auth.generateToken(user.id, user.username);
         res.json({
             message: 'Login successful',
@@ -69,9 +73,9 @@ router.post('/login', async (req, res) => {
     }
 });
 
-router.get('/me', auth.authenticate, (req, res) => {
+router.get('/me', auth.authenticate, async (req, res) => {
     try {
-        const user = auth.getUserById(req.userId);
+        const user = await auth.getUserById(req.userId);
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
